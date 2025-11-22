@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import Select from 'react-select';
@@ -15,15 +16,21 @@ import { toast } from 'react-toastify';
 import { IoMdCode } from "react-icons/io";
 import { FaEye } from "react-icons/fa";
 
-
+import { saveGenerated, savePending } from "../utils/storage";
+import { getUser } from "../utils/auth";
 
 const Home = () => {
+    const navigate = useNavigate();
+
     const options = [
         { value: 'html-css', label: 'HTML + CSS' },
         { value: 'html-tailwind', label: 'HTML + Tailwind CSS' },
         { value: 'html-bootstrap', label: 'HTML + Bootstrap' },
         { value: 'html-css-js', label: 'HTML + CSS + JS' },
+        { value: 'react-cdn', label: 'React (CDN + JSX)' },
+        { value: 'react-tailwind-cdn', label: 'React + Tailwind (CDN)' },
     ];
+
 
     const [outputScreen, setOutputScreen] = useState(false);
     const [tab, setTab] = useState(1);
@@ -38,28 +45,138 @@ const Home = () => {
         return match ? match[1].trim() : response.trim();
     }
 
+    const editorLanguage =
+        framework.value.startsWith("react") ? "javascript" : "html";
+
+
+    const loadingPhrases = [
+        "Building your component…",
+        "Crafting clean UI…",
+        "Writing structured code…",
+        "Adding animations…",
+        "Finalizing layout…",
+        "Optimizing performance…",
+        "Loading design tokens…",
+        "Calibrating responsive breakpoints…",
+        "Organizing file structure…",
+        "Enhancing accessibility…",
+        "Refactoring for clarity…",
+        "Checking for consistency…",
+        "Assembling UI elements…",
+        "Rendering preview…",
+        "Applying theme styles…"
+    ];
+
+
+    const [phraseIndex, setPhraseIndex] = useState(0);
+    // Cycle loading text
+    useEffect(() => {
+        if (!loading) return;
+        const interval = setInterval(() => {
+            setPhraseIndex((prev) => (prev + 1) % loadingPhrases.length);
+        }, 2500);
+        return () => clearInterval(interval);
+    }, [loading]);
+
+
     const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_API_KEY });
+
+    const buildFrameworkHint = (fw) => {
+        if (fw === "react-cdn" || fw === "react-tailwind-cdn") {
+            return `
+Use React in a way that works directly in a normal browser, without any bundler:
+
+- Return a COMPLETE, standalone HTML document (with <!DOCTYPE html>, <html>, <head>, <body>).
+- In the <head>, include:
+  - <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  - <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  - <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  ${fw === "react-tailwind-cdn" ? '- <script src="https://cdn.tailwindcss.com"></script>' : ""}
+- In the <body>, include <div id="root"></div>.
+- At the end of the body, include:
+  <script type="text/babel">
+    // React code here
+    const App = () => {
+      // component
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+
+Important:
+- Do NOT use import/export statements.
+- Do NOT require any build step.
+- Everything must run directly when the HTML is opened in the browser.
+        `;
+        }
+
+        // Non-React stacks
+        return `
+- Use only the specified stack (no React).
+- Return a complete HTML snippet (or full document) that can run directly in the browser.
+    `;
+    };
+
+
 
     async function getResponse() {
         try {
             setLoading(true);
             const response = await ai.models.generateContent({
                 model: "gemini-2.5-flash",
-                contents: `You are an experienced senior web developer and UI/UX designer with deep expertise in modern frontend technologies, responsive design, and animation. 
-                Generate a complete and high-quality UI component based on the following user input:
-                 - **Component Description:** ${prompt}
-                 - **Framework:** ${framework.value} 
-                ### Requirements: 
-                - Write clean, semantic, and well-structured code following best practices. 
-                - Use the specified framework only. - Ensure the design is **modern, fully responsive, and animated**. 
-                - Include smooth **hover effects, transitions, and shadows**. 
-                - Use **elegant colors, spacing, and typography** for visual appeal. 
-                - Optimize for **SEO and accessibility (a11y)** where applicable. 
-                - Do not include external explanations, comments, or text — **output only the complete code**. 
-                - Return the code properly formatted inside a **Markdown fenced code block**.`,
+                contents: `
+You are an experienced senior web developer and UI/UX designer with deep expertise in modern frontend technologies, responsive design, and animation.
+
+Generate a complete and high-quality UI component based on the following user input:
+
+- Component Description: ${prompt}
+- Framework: ${framework.label} (${framework.value})
+
+### Framework rules:
+${buildFrameworkHint(framework.value)}
+
+### General Requirements:
+- Write clean, semantic, and well-structured code following best practices.
+- Ensure the design is modern, fully responsive, and animated.
+- Include smooth hover effects, transitions, and shadows.
+- Use elegant colors, spacing, and typography for visual appeal.
+- Optimize for accessibility (a11y) where applicable.
+- Do not include external explanations, comments, or text — output only the complete code.
+- Return the code properly formatted inside a Markdown fenced code block.
+`,
             });
-            setCode(extractCode(response.text));
+
+            const extracted = extractCode(response.text);
+            setCode(extracted);
             setOutputScreen(true);
+
+            const generatedObj = {
+                prompt: prompt,
+                framework: framework.value,
+                code: extracted,
+                ts: new Date().toISOString(),
+                user: getUser()?.email || null
+            };
+
+            if (getUser()) {
+                saveGenerated(generatedObj);
+                toast.success("Generated component saved to your history.", {
+                    autoClose: 8000,
+                    className: "purple-success purple-progress"
+                });
+            } else {
+                savePending(generatedObj);
+                toast.info(
+                    "Component created but temporarily. Please sign in to keep it saved on default browser.",
+                    {
+                        autoClose: 15000,
+                        className: "purple-info purple-progress"
+                    }
+                );
+            }
+
+
         } catch (error) {
             console.error(error);
             toast.error("Error generating code");
@@ -95,10 +212,35 @@ const Home = () => {
     };
 
     const openInNewTab = () => {
-        const newWindow = window.open();
-        newWindow.document.write(code);
+        const newWindow = window.open("", "_blank");
+        if (!newWindow) {
+            toast.error("Popup blocked. Please allow popups for this site.");
+            return;
+        }
+        const isFullDocument =
+            /<!DOCTYPE html>/i.test(code) || /<html[\s>]/i.test(code);
+
+        const htmlToWrite = isFullDocument
+            ? code
+            : `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Preview</title>
+  <style>html,body{margin:0;padding:0;}</style>
+</head>
+<body>
+  ${code}
+</body>
+</html>`;
+
+        newWindow.document.open();
+        newWindow.document.write(htmlToWrite);
         newWindow.document.close();
     };
+
+
 
     return (
         <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-[#0e0e10] text-gray-900 dark:text-white transition-colors duration-300">
@@ -167,14 +309,31 @@ const Home = () => {
                 {/* RIGHT SECTION */}
                 <div className="right w-full lg:w-1/2 bg-white dark:bg-[#141319] rounded-xl shadow-md overflow-hidden flex flex-col h-[80vh] border border-gray-200 dark:border-zinc-800 transition-colors duration-300">
                     {!outputScreen ? (
-                        <div className="w-full h-full flex items-center flex-col justify-center p-6 text-center">
-                            <div className="flex items-center justify-center text-[30px] p-[20px] w-[70px] h-[70px] rounded-full bg-gradient-to-r from-purple-400 to-purple-600">
-                                <HiOutlineCode color='white' />
-                            </div>
-                            <p className='text-[16px] dark:text-gray-400 mt-3'>
-                                Your generated code and preview will appear here.
-                            </p>
+                        <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
+                            {loading ? (
+                                <>
+                                    {/* Rotating Loader */}
+                                    <div className="w-16 h-16 border-4 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+
+                                    {/* Changing phrase */}
+                                    <p className="text-[16px] dark:text-gray-300 mt-4 font-medium fade-text">
+                                        {loadingPhrases[phraseIndex]}
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    {/* Default idle state */}
+                                    <div className="flex items-center justify-center text-[30px] p-[20px] w-[70px] h-[70px] rounded-full bg-gradient-to-r from-purple-400 to-purple-600">
+                                        <HiOutlineCode color='white' />
+                                    </div>
+
+                                    <p className='text-[16px] dark:text-gray-400 mt-3'>
+                                        Your generated code and preview will appear here.
+                                    </p>
+                                </>
+                            )}
                         </div>
+
                     ) : (
                         <>
                             {/* Tabs */}
@@ -182,7 +341,7 @@ const Home = () => {
                                 <button onClick={() => setTab(1)} className={`w-1/2 p-[12px] rounded-tl-xl transition-all flex items-center justify-center gap-2 ${tab === 1 ? "bg-gray-200 dark:bg-[#333]" : ""}`}>
                                     <IoMdCode /> Code
                                 </button>
-                                <button onClick={() => setTab(2)} className={`w-1/2 p-[12px] rounded-tr-xl transition-all flex items-center justify-center ${tab === 2 ? "bg-gray-200 dark:bg-[#333]" : ""}`}>
+                                <button onClick={() => setTab(2)} className={`w-1/2 p-[12px] rounded-tr-xl transition-all flex items-center justify-center gap-2 ${tab === 2 ? "bg-gray-200 dark:bg-[#333]" : ""}`}>
                                     <FaEye /> Preview
                                 </button>
                             </div>
@@ -221,10 +380,11 @@ const Home = () => {
                                     <Editor
                                         height="100%"
                                         theme={document.documentElement.classList.contains('dark') ? 'vs-dark' : 'light'}
-                                        language="html"
+                                        language={editorLanguage}
                                         value={code}
                                         onChange={(val) => setCode(val)}
                                     />
+
                                 ) : (
                                     <iframe
                                         key={refreshKey}

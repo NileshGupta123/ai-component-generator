@@ -8,13 +8,13 @@ const Footer = () => {
 
                 {/* Left Text */}
                 <p className="text-[14px]">
-                    Made with ❤️ by <span className="font-semibold text-purple-500">Aditya Verma</span>
+                    Made with ❤️ by <span className="font-semibold text-purple-500">Nilesh Gupta</span>
                 </p>
 
                 {/* Links */}
                 <div className="flex items-center gap-4">
                     <a
-                        href="https://github.com/itsaditya0108"
+                        href="https://github.com/NileshGupta123"
                         target="_blank"
                         rel="noopener noreferrer"
                         title="View on GitHub"
@@ -24,7 +24,7 @@ const Footer = () => {
                     </a>
 
                     <a
-                        href="https://itsaditya0108.github.io/adityaportfolio/"
+                        href="https://taupe-moonbeam-99d123.netlify.app/"
                         target="_blank"
                         rel="noopener noreferrer"
                         title="Visit Portfolio"
